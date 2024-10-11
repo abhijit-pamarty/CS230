@@ -5,7 +5,7 @@ Created on Mon Oct  7 17:13:30 2024
 @author: wygli
 """
 
-#This code uses the Cottrell Equation for unidirection diffusion to estimate Lithium Ion concentrations.
+# This code uses the Cottrell Equation for unidirection diffusion to estimate Lithium Ion concentrations.
 # Data is taken from the DIB dataset from the University of Warwick.
 
 import os
@@ -15,7 +15,8 @@ import matplotlib.pyplot as plt
 
 folder_path=r"C:\Users\wygli\OneDrive\Desktop\docs\Stanford Grad\cs230\DIB_Data\.csvfiles\Capacity_Check\80per_Cells_Capacity_Check_08122021_080cycle"
 
-
+# This function takes in a folder path with the DIB csv files and returns a list of dataframes with data
+# from the CSV files
 def getCSV(folder_path):
     files = []
     csv_files = [file for file in os.listdir(folder_path) if file.endswith('.csv')]
@@ -26,6 +27,8 @@ def getCSV(folder_path):
         files.append(dataframe)
         return files
 
+#This function defines the Cottrell Equation which is Fick's second law of diffusion solved
+# for specific boundary conditions for a planar electrode
 def Cottrell_eq(t,n,D,F,A,i):
     return i/(n*F*A*(D**(1/2))/((np.pi**(1/2))*t**(1/2)))
 
