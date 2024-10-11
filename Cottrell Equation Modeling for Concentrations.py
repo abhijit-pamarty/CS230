@@ -13,8 +13,6 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
-folder_path=r"C:\Users\wygli\OneDrive\Desktop\docs\Stanford Grad\cs230\DIB_Data\.csvfiles\Capacity_Check\80per_Cells_Capacity_Check_08122021_080cycle"
-
 # This function takes in a folder path with the DIB csv files and returns a list of dataframes with data
 # from the CSV files
 def getCSV(folder_path):
@@ -37,8 +35,9 @@ n = 1 #number of electrons transferred per ion
 A = 1 #surface area of electrode
 D = 2.5*10**(-6) #diffusion coefficient of LiPF6 in EC:DMC, cm^2/s
 
+folder_path=r"C:\Users\wygli\OneDrive\Desktop\docs\Stanford Grad\cs230\DIB_Data\.csvfiles\Capacity_Check\80per_Cells_Capacity_Check_08122021_080cycle"
 files = getCSV(folder_path)
-concentrations = Cottrell_eq(files[0].iloc[13497:19000, 3].astype(float), n, D, F, A, files[0].iloc[13497:19000, 8].astype(float))
+concentrations = Cottrell_eq(files[0].iloc[40:19000, 3].astype(float), n, D, F, A, abs(files[0].iloc[40:19000, 8].astype(float)))
 
 plt.ylabel('Concentrations')
 plt.plot(concentrations)
