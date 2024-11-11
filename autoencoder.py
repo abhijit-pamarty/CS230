@@ -128,6 +128,7 @@ class Decoder(nn.Module):
         
         x = self.upsample2(x)
         x = f.tanh(self.conv3(x))
+        x = torch.reshape(x, (input_dim, input_dim))
         
         return x
   
@@ -173,8 +174,8 @@ if __name__ == "__main__":
     # Create encoder and decoder
     encoder = Encoder(input_dim, input_channels, latent_space_dim)
     decoder = Decoder(input_dim, input_channels, latent_space_dim)
-    criterion = CustomLoss()
-    optimizer = optim.Adam(list(encoder.parameters()) + list(decoder.parameters())  , lr=0.0001)
+    criterion = nn.MSELoss()
+    optimizer = optim.Adam(list(encoder.parameters()) + list(decoder.parameters())  , lr=0.00001)
 
     # Generate data
     X = generate_data(num_samples, input_dim)
