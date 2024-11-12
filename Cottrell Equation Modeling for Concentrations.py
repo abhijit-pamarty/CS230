@@ -18,6 +18,10 @@ import torch.optim as optim
 import pandas as pd
 import matplotlib.pyplot as plt
 from torch.utils.data import Dataset, DataLoader
+from sklearn.metrics import mean_squared_error
+#import deepxde as dde
+import numpy as np
+#from deepxde.backend import tf
 
 class CustomDataset(torch.utils.data.Dataset):
     def __init__(self, data, targets):
@@ -50,7 +54,7 @@ def Cottrell_eq(t,n,D,F,A,i):
 def Nernst_eq(E,E0, n, F, R, T):
     #return U+((R*T/(n*F))*np.log((1-x)/x))+V_ni
     #return 1/(1+np.exp(-n*F*(E-E0)/(R*T))) #return x, concentration of reduced species
-    return np.exp(E0-E)*(n*F/(R*T)) #return Q, [red]/[ox]
+    return np.exp(E0-E)*(n*F/(R*T)) #return Q, [red]/[ox], = [li+][C6]/[LiC6] at anode
 
 F = 96485 #Faraday's constant, C/mol
 n = 1 #number of electrons transferred per ion
@@ -65,19 +69,31 @@ folder_path=r"C:\Users\wygli\OneDrive\Desktop\docs\Stanford Grad\cs230\DIB_Data\
 files = getCSV(folder_path)
 
 # Calculating concentration at surface of electrode using Cottrell  Equation
-surface_conc = Cottrell_eq(files[0].iloc[40:19000, 3].astype(float), n, D, F, A, abs(files[0].iloc[40:19000, 8].astype(float)))
-fig1 = plt.figure(figsize=(10, 5))
-plt.ylabel('Surface Concentrations')
-plt.plot(surface_conc)
-plt.grid()
+#surface_conc = Cottrell_eq(files[0].iloc[40:19000, 3].astype(float), n, D, F, A, abs(files[0].iloc[40:19000, 8].astype(float)))
+#fig1 = plt.figure(figsize=(10, 5))
+#plt.ylabel('Surface Concentrations')
+#plt.plot(surface_conc)
+#plt.grid()
 
 # Calculating total concentration in electrode using Nernst equation
 fig2 = plt.figure(figsize=(10, 5))
+Q=[]
+li_conc=[]
+for i in range(len(files)):
+    Q.append(Nernst_eq(files[i].iloc[40:19000,7].astype(float), E0, n, F, R,T))
+    lic6_conc = Q[i].iloc[0]
+    c6_conc = 1
+    li_conc.append(Q[i]*c6_conc/lic6_conc)
+    plt.plot(li_conc[i])
 
-total_conc = Nernst_eq(files[0].iloc[40:19000,7].astype(float), E0, n, F, R,T)
-plt.ylabel('Concentrations')
-plt.plot(total_conc)
+
+plt.ylabel('Concentrations [M]')
+
+
 plt.grid()
+
+
+#initial Q is 52.5279, want to start at 1M. Let [LiC6] start at 52.5279, [C6] start at 1
 
 #%%
 
@@ -152,10 +168,6 @@ model_linear.train()
 epoch_count = 100
 
 #%%
-print(f"Number of samples in train_dataset: {len(train_dataset)}")
-print(f"Shape of train_data: {train_data.shape}")
-print(f"Shape of train_targets: {train_targets.shape}")
-
 
 for epoch in range(epoch_count):
     # Loop through and get pairs of batch training inputs and labels
@@ -195,13 +207,12 @@ linear_writer.close()
 #%%
 model_linear.eval()
 
-from sklearn.metrics import mean_squared_error, r2_score
 
 test_losses = []
 all_predictions = []
 all_targets = []
 
-with torch.no_grad():  # Disable gradient computation
+with torch.no_grad():
     for inputs, labels in test_loader:
         inputs = inputs.to(DEVICE).unsqueeze(1)
         labels = labels.to(DEVICE).float()
@@ -213,17 +224,43 @@ with torch.no_grad():  # Disable gradient computation
         all_predictions.extend(outputs.cpu().numpy().flatten())
         all_targets.extend(labels.cpu().numpy().flatten())
 
-# Calculate average test loss
-avg_test_loss = np.mean(test_losses)
-
-# Convert predictions and targets to numpy arrays
 all_predictions = np.array(all_predictions)
 all_targets = np.array(all_targets)
 
-# Calculate MSE and R2 score
 mse = mean_squared_error(all_targets, all_predictions)
-r2 = r2_score(all_targets, all_predictions)
 
-print(f"Average Test Loss: {avg_test_loss:.4f}")
-print(f"Mean Squared Error: {mse:.4f}")
-print(f"R2 Score: {r2:.4f}")
+print("mse: " + mse)
+
+#%%
+
+geom = dde.geometry.Interval(-1, 1)
+timedomain = dde.geometry.TimeDomain(0, 1)
+geomtime = dde.geometry.GeometryXTime(geom, timedomain)
+
+def pde(x, y):
+    dc_t = dde.grad.jacobian(y, x, j=1)
+    dc_x = dde.grad.jacobian(y, x, j=1)
+
+    dc_xx = dde.grad.hessian(y, x, j=0)
+    return (
+        dc_t
+        - (2/x)* dc_x
+        - dc_xx
+        )
+
+def func(x): #reference solution
+    return np.sin(np.pi * x[:, 0:1]) * np.exp(-x[:, 1:])
+
+bc = dde.icbc.NeumannBC(geomtime, func, lambda _, on_boundary: on_boundary)
+ic = dde.icbc.IC(geomtime, func, lambda _, on_initial: on_initial)
+
+data = dde.data.TimePDE( #time pde
+    geomtime,
+    pde,
+    [bc, ic],
+    num_domain=40,
+    num_boundary=20,
+    num_initial=10,
+    solution=func,
+    num_test=10000,
+)
