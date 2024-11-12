@@ -79,18 +79,22 @@ files = getCSV(folder_path)
 fig2 = plt.figure(figsize=(10, 5))
 Q=[]
 li_conc=[]
+time = []
 for i in range(len(files)):
     Q.append(Nernst_eq(files[i].iloc[40:19000,7].astype(float), E0, n, F, R,T))
     lic6_conc = Q[i].iloc[0]
     c6_conc = 1
     li_conc.append(Q[i]*c6_conc/lic6_conc)
-    plt.plot(li_conc[i])
+    time.append(files[i].iloc[40:19000,2])
+    print(time)
+    #plt.plot(time[i],li_conc[i])
 
 
 plt.ylabel('Concentrations [M]')
 
 
 plt.grid()
+combined = list(zip(time, li_conc))
 
 
 #initial Q is 52.5279, want to start at 1M. Let [LiC6] start at 52.5279, [C6] start at 1
