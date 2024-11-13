@@ -138,7 +138,7 @@ class CustomLoss(nn.Module):
         super(CustomLoss, self).__init__()
 
     def forward(self, predictions, targets):
-        loss = torch.mean((predictions - targets)**2)
+        loss = ((torch.mean((predictions - targets)**2))**0.5)/torch.mean(targets)
         return loss
 
 # Generate synthetic data: Mapping from input matrix A
@@ -150,11 +150,20 @@ def generate_data(num_samples=100, input_size=5):
     return torch.tensor(A, dtype=torch.float32)
 
 # Model training
-def train_model(encoder, decoder, criterion, optimizer, X, num_epochs=500):
+def train_model(encoder, decoder, criterion, optimizer, X, run, num_epochs=1):
+    
+    num_samples, _, _ = X.shape
     for epoch in range(num_epochs):
+        
+        
+        #with SGD
+        sample_num = r.randint(0, num_samples - 1)
+        sample = np.zeros((1, 1, 100, 100)).astype(np.float32)
+        sample[0, 0, :, :] = X[sample_num, :, :]
+        sample = torch.from_numpy(sample)
         optimizer.zero_grad()
-        output = decoder(encoder(X))
-        loss = criterion(output, X)
+        output = decoder(encoder(sample))
+        loss = criterion(sample, output)
         loss.backward()
         torch.nn.utils.clip_grad_norm_(encoder.parameters(), 0.2)
         torch.nn.utils.clip_grad_norm_(decoder.parameters(), 0.2)
@@ -162,15 +171,28 @@ def train_model(encoder, decoder, criterion, optimizer, X, num_epochs=500):
 
         if epoch % 1 == 0:
             print(f"Epoch {epoch+1}/{num_epochs}, Loss: {loss.item()}")
+            
+        if epoch % 1 == 0:
+            print("Saving model...\n")
+            torch.save(encoder.state_dict(), "encoder_state_run_"+str(run)+"_"+str(epoch)+".pth")
+            torch.save(decoder.state_dict(), "decoder_state_run_"+str(run)+"_"+str(epoch)+".pth")
 
 # Main function
 if __name__ == "__main__":
     # Hyperparameters
     input_dim = 100  # Number of features in input matrix
     input_channels = 1  # Number of features in output matrix
-    latent_space_dim = 10  # Number of hidden units in the neural operator
-    num_samples = 1 # Number of training samples
+    latent_space_dim = 4  # Number of units in latent space
+    num_samples = 20 # Number of training samples
+    run = 1
+    total_epochs = 2000
 
+    data_file = 'Taus.npy'
+    load_model = True
+    run_to_load = 1
+    epoch_to_load = 1
+    
+    
     # Create encoder and decoder
     encoder = Encoder(input_dim, input_channels, latent_space_dim)
     decoder = Decoder(input_dim, input_channels, latent_space_dim)
@@ -178,13 +200,23 @@ if __name__ == "__main__":
     optimizer = optim.Adam(list(encoder.parameters()) + list(decoder.parameters())  , lr=0.00001)
 
     # Generate data
-    X = generate_data(num_samples, input_dim)
+    X = np.load(data_file).astype(np.float32)
+    X = X/np.max(X)
 
     # Train the model
-    train_model(encoder, decoder, criterion, optimizer, X)
+    if (load_model):
+        print("Loading model...\n")
+        encoder.load_state_dict(torch.load("encoder_state_run_"+str(run_to_load)+"_"+str(epoch_to_load)+".pth"))
+        decoder.load_state_dict(torch.load("decoder_state_run_"+str(run_to_load)+"_"+str(epoch_to_load)+".pth"))
+    else:
+        print("Starting training...\n")
+        train_model(encoder, decoder, criterion, optimizer, X, run, total_epochs)
 
     # Test with a new sample
-    test_sample = X[:, 1, 1]
+
+    test_sample = np.zeros((1, 1, 100, 100)).astype(np.float32)
+    test_sample[0, 0, :, :] = X[1, :, :]
+    test_sample = torch.from_numpy(test_sample)
     prediction = decoder(encoder(test_sample))
     print("Input matrix:", test_sample.numpy())
     print("Predicted output matrix:", prediction.detach().numpy())
