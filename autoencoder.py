@@ -5,7 +5,7 @@ import torch.nn.functional as f
 import torch.optim as optim
 import numpy as np
 import random as r
-
+import matplotlib.pyplot as plt
 
     
 class Encoder(nn.Module):
@@ -172,7 +172,7 @@ def train_model(encoder, decoder, criterion, optimizer, X, run, num_epochs=1):
         if epoch % 1 == 0:
             print(f"Epoch {epoch+1}/{num_epochs}, Loss: {loss.item()}")
             
-        if epoch % 1 == 0:
+        if epoch % 500 == 0:
             print("Saving model...\n")
             torch.save(encoder.state_dict(), "encoder_state_run_"+str(run)+"_"+str(epoch)+".pth")
             torch.save(decoder.state_dict(), "decoder_state_run_"+str(run)+"_"+str(epoch)+".pth")
@@ -190,7 +190,7 @@ if __name__ == "__main__":
     data_file = 'Taus.npy'
     load_model = True
     run_to_load = 1
-    epoch_to_load = 1
+    epoch_to_load = 1000
     
     
     # Create encoder and decoder
@@ -219,4 +219,10 @@ if __name__ == "__main__":
     test_sample = torch.from_numpy(test_sample)
     prediction = decoder(encoder(test_sample))
     print("Input matrix:", test_sample.numpy())
+    plt.imshow(test_sample.numpy()[0, 0, :, :])
+    plt.title("true data")
+    plt.show()
+    plt.imshow(prediction.detach().numpy())
+    plt.title("predicted data")
+    plt.show()
     print("Predicted output matrix:", prediction.detach().numpy())
