@@ -33,8 +33,6 @@ def diffusion( num_samples = 20, min_kappa = 5e-4, max_kappa = 0.025, M = 50, mi
     Ax[-1, -1] = -1/(h*M)
     Ax[-1, -2] = 1/(h*M)
 
-    
-        
     del1 = np.kron(I, Ax) 
     
     #create the del^2 matrix with central differences
@@ -66,10 +64,10 @@ def diffusion( num_samples = 20, min_kappa = 5e-4, max_kappa = 0.025, M = 50, mi
     
     #set the neumann boundary conditions
 
-    #Ay[-1,-1] = 0
-    #Ay[-1, -2] = 0
-    #Ay[0,0] = 0
-    #Ay[0,1] = 0
+    Ay[-1,-1] = 0
+    Ay[-1, -2] = 0
+    Ay[0,0] = 0
+    Ay[0,1] = 0
 
     del2_y = np.kron(I, Ax)
     del2_x = np.kron(Ay, I)
@@ -92,10 +90,10 @@ def diffusion( num_samples = 20, min_kappa = 5e-4, max_kappa = 0.025, M = 50, mi
     sample[:, 1] = (max_U1 - min_U1)* sample[:, 1]  + min_U1
     sample_idx = 0
     
-    Fs = np.ones((num_samples, num_timesteps, M, M))
+    Fs = np.zeros((num_samples, num_timesteps, M, M))
     F = np.zeros((M, M))
     F_prev = np.zeros((M, M))
-
+    scaling_factors = []
     while sample_idx < num_samples:
 
         print("creating sample " + str(sample_idx) + "...\n" )
@@ -105,7 +103,8 @@ def diffusion( num_samples = 20, min_kappa = 5e-4, max_kappa = 0.025, M = 50, mi
 
         
         #dirichlet boundary conditions
-        scaling_factor = sample[sample_idx, 0]/((h**2)) - 1/(dt)
+        scaling_factor = sample[sample_idx, 0]/((h**2)) + sample[sample_idx, 1]/(2*h)
+        scaling_factors.append(scaling_factor)
         
         i = int(np.ceil(M/3));
         
@@ -114,7 +113,7 @@ def diffusion( num_samples = 20, min_kappa = 5e-4, max_kappa = 0.025, M = 50, mi
         t = 0
         F_prev = np.zeros((M, M))
         F_prev[0,:] = scaling_factor
-        F_prev[-1,:] = 0
+
         
         while t < num_timesteps:
             
@@ -123,19 +122,22 @@ def diffusion( num_samples = 20, min_kappa = 5e-4, max_kappa = 0.025, M = 50, mi
             RHS = F_eval
             F = np.linalg.solve(-LHS,RHS)
             F = F.reshape(M, M)
-            plt.imshow(F)
+            plt.imshow(F, cmap='viridis')
             plt.show()
-            F[0, :] = scaling_factor
-            F[-1,:] = 0
-            F_prev = F
+            
             Fs[sample_idx, t, :, :] = F
+            F[0,:] = scaling_factor
+
+
+            
+            F_prev = F
             t += 1
         
         sample_idx += 1
         
     
     np.save('Fs.npy', Fs)
-    
-    
+    np.save('sample_data.npy', sample)
+    np.save('scaling_factors.npy', scaling_factors)
     
 diffusion()
