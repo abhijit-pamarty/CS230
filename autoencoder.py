@@ -150,27 +150,43 @@ def generate_data(num_samples=100, input_size=5):
     return torch.tensor(A, dtype=torch.float32)
 
 # Model training
-def train_model(encoder, decoder, criterion, optimizer, X, run, num_epochs=1):
+def train_model(encoder, decoder, criterion, optimizer, X, run, num_epochs=1, batchsize=50):
     
-    num_samples, _, _ = X.shape
+    num_samples, timesteps, _, _ = X.shape
     for epoch in range(num_epochs):
         
         
-        #with SGD
-        sample_num = r.randint(0, num_samples - 1)
-        sample = np.zeros((1, 1, 100, 100)).astype(np.float32)
-        sample[0, 0, :, :] = X[sample_num, :, :]
-        sample = torch.from_numpy(sample)
+        #with BGD
+        samples = np.zeros((batchsize, 1, 50, 50)).astype(np.float32)
+
+
+            
+            
         optimizer.zero_grad()
+        loss = []
+        sample = np.zeros((1, 1, 50, 50)).astype(np.float32)
+        sample_num = r.randint(0, num_samples - 1)
+        timestep_num = r.randint(0, timesteps - 1)
+        sample[0, 0, :, :] = X[sample_num, timestep_num, :, :]
+        sample = torch.from_numpy(sample)
         output = decoder(encoder(sample))
         loss = criterion(sample, output)
+        
+        
+        
+        
         loss.backward()
         torch.nn.utils.clip_grad_norm_(encoder.parameters(), 0.2)
         torch.nn.utils.clip_grad_norm_(decoder.parameters(), 0.2)
         optimizer.step()
-
+        
         if epoch % 1 == 0:
             print(f"Epoch {epoch+1}/{num_epochs}, Loss: {loss.item()}")
+            
+        if epoch % 5 == 0:
+            error = sample.detach().numpy()[0,0,:,:] - output.detach().numpy()[:,:]
+            plt.imshow(error)
+            plt.show()
             
         if epoch % 500 == 0:
             print("Saving model...\n")
@@ -180,15 +196,15 @@ def train_model(encoder, decoder, criterion, optimizer, X, run, num_epochs=1):
 # Main function
 if __name__ == "__main__":
     # Hyperparameters
-    input_dim = 100  # Number of features in input matrix
+    input_dim = 50  # Number of features in input matrix
     input_channels = 1  # Number of features in output matrix
     latent_space_dim = 4  # Number of units in latent space
     num_samples = 20 # Number of training samples
     run = 1
     total_epochs = 2000
 
-    data_file = 'Taus.npy'
-    load_model = True
+    data_file = 'Fs.npy'
+    load_model = False
     run_to_load = 1
     epoch_to_load = 1000
     
