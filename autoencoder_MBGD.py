@@ -5,7 +5,7 @@ import torch.nn.functional as f
 import torch.optim as optim
 import numpy as np
 import random as r
-#import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader, TensorDataset
 
     
@@ -237,18 +237,19 @@ if __name__ == "__main__":
     total_epochs = 5000
 
     data_file = 'Fs.npy'
-    load_model = False
+    load_model = True
     restart_training = True
-    run_to_load = 1
-    epoch_to_load = 5000
+    use_CUDA = True
+    run_to_load = 2
+    epoch_to_load = 100
     learn_rate = 1e-5
-    batch_size = 50
+    batch_size = 1
     
     # Create encoder and decoder
     encoder = Encoder(input_dim, input_channels, latent_space_dim, batch_size)
     decoder = Decoder(input_dim, input_channels, latent_space_dim, batch_size)
     
-    if torch.cuda.is_available():
+    if torch.cuda.is_available() and use_CUDA:
         device = torch.device("cuda:0")  # Specify the GPU device
         print("CUDA available")
         encoder = encoder.to(device)
@@ -281,15 +282,26 @@ if __name__ == "__main__":
     # Test with a new sample
 
     test_sample = np.zeros((1, 1, 50, 50)).astype(np.float32)
-    test_sample[0, 0, :, :] = X[1, 1, :, :]
-    test_sample = torch.from_numpy(test_sample)
-    prediction = decoder(encoder(test_sample))
-    print("Input matrix:", test_sample.numpy())
-    #plt.imshow(test_sample.numpy()[0, 0, :, :])
-    #plt.title("true data")
-    #plt.show()
-    #plt.imshow(prediction.detach().numpy())
-    #plt.title("predicted data")
-    #plt.show()
+    test_sample[0, 0, :, :] = X[19, 50, :, :]
+
     
-    print("Predicted output matrix:", prediction.detach().numpy())
+    test_sample = torch.from_numpy(test_sample).float()
+    
+    if torch.cuda.is_available():
+        print("CUDA available")
+        device = torch.device("cuda:0")  # Specify the GPU device
+        test_sample = test_sample.to(device)
+    
+    dataset = TensorDataset(test_sample)
+    batchsize = 1  # Ensure batch size fits dataset
+    dataloader = DataLoader(dataset, batch_size=batchsize, shuffle=True, drop_last=True)
+    prediction = []
+    for batch in dataloader:
+        prediction = decoder(encoder(batch[0]))
+    plt.imshow(test_sample.cpu().numpy()[0, 0, :, :])
+    plt.title("true data")
+    plt.show()
+    plt.imshow(prediction.detach().cpu().numpy()[0, 0, :, :])
+    plt.title("predicted data")
+    plt.show()
+    
