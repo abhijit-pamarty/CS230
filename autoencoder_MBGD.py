@@ -6,6 +6,7 @@ import torch.optim as optim
 import numpy as np
 import random as r
 import matplotlib.pyplot as plt
+from torch.utils.data import DataLoader, TensorDataset
 
     
 class Encoder(nn.Module):
@@ -54,7 +55,7 @@ class Encoder(nn.Module):
         x = f.tanh(self.conv3(x))
         
         #flatten
-        x = x.view(-1)
+        x = x.view(self.fc_1, -1)
         
         #FC layers
         x = f.tanh(self.fc1(x))
@@ -149,49 +150,70 @@ def generate_data(num_samples=100, input_size=5):
     
     return torch.tensor(A, dtype=torch.float32)
 
-# Model training
+
 def train_model(encoder, decoder, criterion, optimizer, X, run, learn_rate, num_epochs=1, batchsize=50):
+    # Reshape data into (num_samples * num_timesteps, X_size, Y_size)
+    num_samples, num_timesteps, X_size, Y_size = X.shape
+    X_reshaped = X.reshape(num_samples * num_timesteps, X_size, Y_size)
+    
+    # Convert to tensor and prepare DataLoader
+    X_tensor = torch.from_numpy(X_reshaped).float().unsqueeze(1)  # Add channel dimension
+    dataset = TensorDataset(X_tensor)
+    
+    batchsize = min(batchsize, len(dataset))  # Ensure batch size fits dataset
+    dataloader = DataLoader(dataset, batch_size=batchsize, shuffle=True, drop_last=True)
+    
+    scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=1 / 1.2)
     
     for epoch in range(num_epochs):
-
-        if epoch % 1000 == 0:
-            optimizer = optim.Adam(list(encoder.parameters()) + list(decoder.parameters())  , lr=learn_rate)
-            learn_rate = learn_rate/1.2
+        epoch_loss = 0.0
+        
+        for batch in dataloader:
+            # Get a batch of data
+            sample = batch[0]  # Shape: (batchsize, 1, X_size, Y_size)
             
-        #with MBGD
-        num_samples, timesteps, _, _ = X.shape
-        loss = 0
-        for batch_idx in range(batchsize):
+            # Forward pass
+            encoded = encoder(sample)
+            output = decoder(encoded)
+            loss = criterion(output, sample)
             
-            
-            sample = np.zeros((1, 1, 50, 50)).astype(np.float32)
-            sample_num = r.randint(0, num_samples - 4)
-            timestep_num = r.randint(0, timesteps - 1)
-            sample[0, 0, :, :] = X[sample_num, timestep_num, :, :]
-            sample = torch.from_numpy(sample)
-            output = decoder(encoder(sample))
-            loss = criterion(sample, output)
-            loss = loss/batchsize
-            
+            # Backward pass
+            optimizer.zero_grad()
             loss.backward()
+            
+            # Gradient clipping
+            torch.nn.utils.clip_grad_norm_(encoder.parameters(), 0.2)
+            torch.nn.utils.clip_grad_norm_(decoder.parameters(), 0.2)
+            
+            optimizer.step()
+            
+            # Accumulate loss
+            epoch_loss += loss.item()
         
-        optimizer.step()
-        torch.nn.utils.clip_grad_norm_(encoder.parameters(), 0.2)
-        torch.nn.utils.clip_grad_norm_(decoder.parameters(), 0.2)
-        optimizer.zero_grad()
+        # Scheduler step every 1000 epochs
+        if epoch % 1000 == 0 and epoch > 0:
+            scheduler.step()
         
+        # Print epoch loss
+        avg_loss = epoch_loss / len(dataloader) if len(dataloader) > 0 else 0
         if epoch % 1 == 0:
-            print(f"Epoch {epoch+1}/{num_epochs}, Loss: {loss.item()}")
-            
+            print(f"Epoch {epoch+1}/{num_epochs}, Loss: {avg_loss}")
+        
+        # Visualize error every 5 epochs
         if epoch % 5 == 0:
-            error = sample.detach().numpy()[0,0,:,:] - output.detach().numpy()[:,:]
-            plt.imshow(error)
-            plt.show()
-            
+            with torch.no_grad():
+                error = sample[0, 0, :, :].detach().cpu().numpy() - output[0, 0, :, :].detach().cpu().numpy()
+                plt.imshow(error, cmap='hot', interpolation='nearest')
+                plt.title(f"Error Visualization (Epoch {epoch+1})")
+                plt.colorbar()
+                plt.show()
+        
+        # Save model periodically
         if epoch % 2500 == 0:
             print("Saving model...\n")
-            torch.save(encoder.state_dict(), "encoder_state_run_"+str(run)+"_"+str(epoch)+".pth")
-            torch.save(decoder.state_dict(), "decoder_state_run_"+str(run)+"_"+str(epoch)+".pth")
+            torch.save(encoder.state_dict(), f"encoder_state_run_{run}_{epoch}.pth")
+            torch.save(decoder.state_dict(), f"decoder_state_run_{run}_{epoch}.pth")
+
 
 # Main function
 if __name__ == "__main__":
