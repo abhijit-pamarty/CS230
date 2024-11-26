@@ -5,13 +5,13 @@ import torch.nn.functional as f
 import torch.optim as optim
 import numpy as np
 import random as r
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader, TensorDataset
 
     
 class Encoder(nn.Module):
     
-    def __init__(self, input_dim, input_channels, latent_space_dim):
+    def __init__(self, input_dim, input_channels, latent_space_dim, batch_size):
         
         super(Encoder, self).__init__()
         
@@ -24,7 +24,6 @@ class Encoder(nn.Module):
         self.c_l3 = 500
         
         #image sizes after each convolution
-        
         self.i_l1 = 31
         self.i_l2 = 15
         self.i_l3 = 7
@@ -35,7 +34,6 @@ class Encoder(nn.Module):
         self.f_l3 = self.i_l2 - self.i_l3 + 1
         
         #fc layers
-        
         self.fc_1 = self.i_l3*self.i_l3*self.c_l3
         self.fc_2 = 200
         
@@ -55,7 +53,7 @@ class Encoder(nn.Module):
         x = f.tanh(self.conv3(x))
         
         #flatten
-        x = x.view(self.fc_1, -1)
+        x = x.view(batch_size, self.fc_1)
         
         #FC layers
         x = f.tanh(self.fc1(x))
@@ -66,7 +64,7 @@ class Encoder(nn.Module):
 
 class Decoder(nn.Module):
     
-    def __init__(self, input_dim, input_channels, latent_space_dim):
+    def __init__(self, input_dim, input_channels, latent_space_dim, batch_size):
         
         super(Decoder, self).__init__()
         
@@ -111,14 +109,15 @@ class Decoder(nn.Module):
         
     def forward(self, x):
         
-        
+        #unflatten
+        x = x.view(batch_size, latent_space_dim)
         
         #FC layers
         x = f.tanh(self.fc1(x))
         x = f.tanh(self.fc2(x))
         
         #reshape x
-        x = torch.reshape(x, (1, self.c_l3, self.i_l3, self.i_l3))
+        x = torch.reshape(x, (batch_size, self.c_l3, self.i_l3, self.i_l3))
         
         #conv layers
         x = self.upsample1(x)
@@ -129,7 +128,7 @@ class Decoder(nn.Module):
         
         x = self.upsample2(x)
         x = f.tanh(self.conv3(x))
-        x = torch.reshape(x, (input_dim, input_dim))
+        x = torch.reshape(x, (batch_size, self.c_l0, input_dim, input_dim))
         
         return x
   
@@ -158,15 +157,26 @@ def train_model(encoder, decoder, criterion, optimizer, X, run, learn_rate, num_
     
     # Convert to tensor and prepare DataLoader
     X_tensor = torch.from_numpy(X_reshaped).float().unsqueeze(1)  # Add channel dimension
+    
+    if torch.cuda.is_available():
+        print("CUDA available")
+        device = torch.device("cuda:0")  # Specify the GPU device
+        X_tensor = X_tensor.to(device)
+    
+    
     dataset = TensorDataset(X_tensor)
     
     batchsize = min(batchsize, len(dataset))  # Ensure batch size fits dataset
     dataloader = DataLoader(dataset, batch_size=batchsize, shuffle=True, drop_last=True)
     
-    scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=1 / 1.2)
+    scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=1 / 1.1)
+    num_batches = len(dataloader)
     
     for epoch in range(num_epochs):
         epoch_loss = 0.0
+        batch_num = 0
+
+
         
         for batch in dataloader:
             # Get a batch of data
@@ -189,27 +199,28 @@ def train_model(encoder, decoder, criterion, optimizer, X, run, learn_rate, num_
             
             # Accumulate loss
             epoch_loss += loss.item()
+            print(f"Processing batch {batch_num+1}/{num_batches}")
         
         # Scheduler step every 1000 epochs
-        if epoch % 1000 == 0 and epoch > 0:
+        if epoch % 10 == 0 and epoch > 0:
             scheduler.step()
         
         # Print epoch loss
-        avg_loss = epoch_loss / len(dataloader) if len(dataloader) > 0 else 0
-        if epoch % 1 == 0:
-            print(f"Epoch {epoch+1}/{num_epochs}, Loss: {avg_loss}")
+        avg_loss = epoch_loss / len(dataloader)
+
+        print(f"Epoch {epoch+1}/{num_epochs}, Loss: {avg_loss}")
         
         # Visualize error every 5 epochs
         if epoch % 5 == 0:
             with torch.no_grad():
                 error = sample[0, 0, :, :].detach().cpu().numpy() - output[0, 0, :, :].detach().cpu().numpy()
-                plt.imshow(error, cmap='hot', interpolation='nearest')
-                plt.title(f"Error Visualization (Epoch {epoch+1})")
-                plt.colorbar()
-                plt.show()
+                #plt.imshow(error, cmap='hot', interpolation='nearest')
+                #plt.title(f"Error Visualization (Epoch {epoch+1})")
+                #plt.colorbar()
+                #plt.show()
         
         # Save model periodically
-        if epoch % 2500 == 0:
+        if epoch % 25 == 0:
             print("Saving model...\n")
             torch.save(encoder.state_dict(), f"encoder_state_run_{run}_{epoch}.pth")
             torch.save(decoder.state_dict(), f"decoder_state_run_{run}_{epoch}.pth")
@@ -223,7 +234,7 @@ if __name__ == "__main__":
     latent_space_dim = 4  # Number of units in latent space
     num_samples = 20 # Number of training samples
     run = 2
-    total_epochs = 50000
+    total_epochs = 5000
 
     data_file = 'Fs.npy'
     load_model = False
@@ -231,16 +242,27 @@ if __name__ == "__main__":
     run_to_load = 1
     epoch_to_load = 5000
     learn_rate = 1e-5
+    batch_size = 50
     
     # Create encoder and decoder
-    encoder = Encoder(input_dim, input_channels, latent_space_dim)
-    decoder = Decoder(input_dim, input_channels, latent_space_dim)
+    encoder = Encoder(input_dim, input_channels, latent_space_dim, batch_size)
+    decoder = Decoder(input_dim, input_channels, latent_space_dim, batch_size)
+    
+    if torch.cuda.is_available():
+        device = torch.device("cuda:0")  # Specify the GPU device
+        print("CUDA available")
+        encoder = encoder.to(device)
+        decoder = decoder.to(device)
+        
+        
     criterion = nn.MSELoss()
     optimizer = optim.Adam(list(encoder.parameters()) + list(decoder.parameters())  , lr=learn_rate)
 
     # Generate data
     X = np.load(data_file).astype(np.float32)
     X = X/np.max(X)
+    X_train = X[0:16, :, :, :]
+    X_test = X[17:19, :, :, :]
 
     # Train the model
     if (load_model):
@@ -251,10 +273,10 @@ if __name__ == "__main__":
         print("Starting training with restart...\n")
         encoder.load_state_dict(torch.load("encoder_state_run_"+str(run_to_load)+"_"+str(epoch_to_load)+".pth"))
         decoder.load_state_dict(torch.load("decoder_state_run_"+str(run_to_load)+"_"+str(epoch_to_load)+".pth"))
-        train_model(encoder, decoder, criterion, optimizer, X, run, learn_rate, total_epochs)
+        train_model(encoder, decoder, criterion, optimizer, X_train, run, learn_rate, total_epochs)
     else:
         print("Starting training...\n")
-        train_model(encoder, decoder, criterion, optimizer, X, run, learn_rate, total_epochs)
+        train_model(encoder, decoder, criterion, optimizer, X_train, run, learn_rate, total_epochs)
 
     # Test with a new sample
 
@@ -263,10 +285,11 @@ if __name__ == "__main__":
     test_sample = torch.from_numpy(test_sample)
     prediction = decoder(encoder(test_sample))
     print("Input matrix:", test_sample.numpy())
-    plt.imshow(test_sample.numpy()[0, 0, :, :])
-    plt.title("true data")
-    plt.show()
-    plt.imshow(prediction.detach().numpy())
-    plt.title("predicted data")
-    plt.show()
+    #plt.imshow(test_sample.numpy()[0, 0, :, :])
+    #plt.title("true data")
+    #plt.show()
+    #plt.imshow(prediction.detach().numpy())
+    #plt.title("predicted data")
+    #plt.show()
+    
     print("Predicted output matrix:", prediction.detach().numpy())
