@@ -16,9 +16,10 @@ class Pade_Neural_Operator(nn.Module):
         super(Pade_Neural_Operator, self).__init__()
         
         #fc layers
-        self.fc_1 = 50
-        self.fc_2 = 50
-        self.fc_3 = 50
+        self.fc_1 = 60
+        self.fc_2 = 60
+        self.fc_3 = 60
+        
         self.fc_p_nc = pade_num_order                                #pade approximant numerator coefficients
         self.fc_p_np = pade_num_order                               #pade approximant numerator powers
         self.fc_p_dc = pade_denom_order                            #pade approximant denominator coefficients
@@ -30,30 +31,37 @@ class Pade_Neural_Operator(nn.Module):
         self.fc2 = nn.Linear(in_features=self.fc_1, out_features=self.fc_2)
         self.fc3 = nn.Linear(in_features=self.fc_2, out_features=self.fc_3)
         self.fc4 = nn.Linear(in_features=self.fc_3, out_features=(self.fc_p_nc + self.fc_p_np + self.fc_p_dc + self.fc_p_dp))
-
+        
+        self.yscale = nn.Parameter(torch.ones(100))
+        self.xscale = nn.Parameter(torch.ones(100))
+        self.bias = nn.Parameter(torch.ones(100))
+        
         
     def forward(self, x, time):
         
         x = x.view( batch_size, parameter_dim)
         
         #FC layers
-        x = f.tanh(self.fc1(x))
-        x = f.tanh(self.fc2(x))
-        x = f.tanh(self.fc3(x))
-        x = f.tanh(self.fc4(x))
+        x1 = f.tanh(self.fc1(x))
+        x2 = f.tanh(self.fc2(x1))
+        x3 = f.tanh(self.fc3(x2))
+        x4 = f.tanh(self.fc4(x3))
         
         #PNO layer
-        num_coeffs = x[:, 0:(self.fc_p_nc)]
-        num_powers = torch.floor(pade_num_order*x[:, self.fc_p_nc:(self.fc_p_nc + self.fc_p_np)])
-        denom_coeffs = x[:, (self.fc_p_nc + self.fc_p_np):(self.fc_p_nc + self.fc_p_np + self.fc_p_dc)]
-        denom_powers = torch.floor(pade_denom_order*x[:, (self.fc_p_nc + self.fc_p_np + self.fc_p_dc):(self.fc_p_nc + self.fc_p_np + self.fc_p_dc + self.fc_p_dc)])
+        num_coeffs = x4[:, 0:(self.fc_p_nc)]
+        num_powers = pade_num_order*x4[:, self.fc_p_nc:(self.fc_p_nc + self.fc_p_np)]
+        denom_coeffs = x4[:, (self.fc_p_nc + self.fc_p_np):(self.fc_p_nc + self.fc_p_np + self.fc_p_dc)]
+        denom_powers = pade_denom_order*x4[:, (self.fc_p_nc + self.fc_p_np + self.fc_p_dc):(self.fc_p_nc + self.fc_p_np + self.fc_p_dc + self.fc_p_dc)]
         
+        time = time*self.xscale
         time_num = time.reshape(num_timesteps, 1)
         time_denom = time.reshape(num_timesteps, 1)
         time_num = time_num.repeat(1, pade_num_order)
         time_denom = time_denom.repeat(1, pade_denom_order)
         
-        output = torch.sum((num_coeffs*((time_num + epsilon)**num_powers)), dim = 1)/(torch.sum(((denom_coeffs*((time_denom + epsilon)**denom_powers))), dim =1))
+        pade = torch.sum((num_coeffs*((time_num + epsilon)**num_powers)), dim = 1)/(torch.sum(((denom_coeffs*((time_denom + epsilon)**denom_powers))), dim =1)) 
+        
+        output = pade*self.yscale + self.bias
         
         return output
 
@@ -81,7 +89,7 @@ def train_model(pade_neural_operator, criterion, optimizer, sample_data, LS_data
     
     dataloader = DataLoader(dataset, batch_size=batchsize, shuffle=True)
     
-    scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=1 / 1.1)
+    scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=1 / 1.005)
     num_batches = len(dataloader)
 
     for epoch in range(num_epochs):
@@ -130,7 +138,7 @@ def train_model(pade_neural_operator, criterion, optimizer, sample_data, LS_data
     
         
         # Save model periodically
-        if (epoch + 1) % 5000 == 0:
+        if (epoch + 1) % 20000 == 0:
             print("Saving model...\n")
             torch.save(pade_neural_operator.state_dict(), "PNO_state_LSvar_"+str(LS_var_train_index)+"_run_"+str(run)+"_"+str(epoch)+".pth")
 
@@ -145,18 +153,18 @@ if __name__ == "__main__":
     epsilon = 1e-4                                          #small coefficient for pade neural operator
     
     load_model = False
-    restart_training = False
+    restart_training = True
     use_CUDA = True
-    run_to_load = 1
-    epoch_to_load = 1000
-    learn_rate = 1e-4
+    run_to_load = 3
+    epoch_to_load = 19999
+    learn_rate = 1e-7
     batch_size = 1
-    run = 3
-    num_epochs = 20000
+    run = 4
+    num_epochs = 100000
     
     #pade neural operator controls
-    pade_num_order = 8
-    pade_denom_order = 7
+    pade_num_order = 5
+    pade_denom_order = 6
     LS_var_train_index = 2                                                              #index of latent space variable to train
 
 
