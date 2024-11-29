@@ -8,17 +8,18 @@ import random as r
 import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader, TensorDataset
 
-#define the pade operator model
-class Pade_Neural_Operator(nn.Module):
+#define the pade layer
+class Pade_Layer(nn.Module):
     
     def __init__(self, parameter_dim, num_timesteps, pade_num_order, pade_denom_order, batch_size, epsilon):
         
-        super(Pade_Neural_Operator, self).__init__()
+        super(Pade_Layer, self).__init__()
         
         #fc layers
-        self.fc_1 = 60
-        self.fc_2 = 60
-        self.fc_3 = 60
+        self.fc_1 = 20
+        self.fc_2 = 20
+        self.fc_3 = 20
+        self.fc_4 = 20
         
         self.fc_p_nc = pade_num_order                                #pade approximant numerator coefficients
         self.fc_p_np = pade_num_order                               #pade approximant numerator powers
@@ -30,11 +31,13 @@ class Pade_Neural_Operator(nn.Module):
         self.fc1 = nn.Linear(in_features=parameter_dim, out_features=self.fc_1)
         self.fc2 = nn.Linear(in_features=self.fc_1, out_features=self.fc_2)
         self.fc3 = nn.Linear(in_features=self.fc_2, out_features=self.fc_3)
-        self.fc4 = nn.Linear(in_features=self.fc_3, out_features=(self.fc_p_nc + self.fc_p_np + self.fc_p_dc + self.fc_p_dp))
+        self.fc4 = nn.Linear(in_features=self.fc_3, out_features=self.fc_4)
+        self.fc5 = nn.Linear(in_features=self.fc_4, out_features=(self.fc_p_nc + self.fc_p_np + self.fc_p_dc + self.fc_p_dp))
         
-        self.yscale = nn.Parameter(torch.ones(100))
-        self.xscale = nn.Parameter(torch.ones(100))
-        self.bias = nn.Parameter(torch.ones(100))
+
+        
+        
+        self.fc6 = nn.Linear(in_features = parameter_dim, out_features = (self.fc_p_nc + self.fc_p_np + self.fc_p_dc + self.fc_p_dp))
         
         
     def forward(self, x, time):
@@ -42,18 +45,19 @@ class Pade_Neural_Operator(nn.Module):
         x = x.view( batch_size, parameter_dim)
         
         #FC layers
-        x1 = f.tanh(self.fc1(x))
-        x2 = f.tanh(self.fc2(x1))
-        x3 = f.tanh(self.fc3(x2))
-        x4 = f.tanh(self.fc4(x3))
+        x1 = f.leaky_relu(self.fc1(x))
+        x2 = f.leaky_relu(self.fc2(x1))
+        x3 = f.leaky_relu(self.fc3(x2))
+        x4 = f.leaky_relu(self.fc4(x3))
+        x5 = f.sigmoid(self.fc5(x4))
+    
         
         #PNO layer
-        num_coeffs = x4[:, 0:(self.fc_p_nc)]
-        num_powers = pade_num_order*x4[:, self.fc_p_nc:(self.fc_p_nc + self.fc_p_np)]
-        denom_coeffs = x4[:, (self.fc_p_nc + self.fc_p_np):(self.fc_p_nc + self.fc_p_np + self.fc_p_dc)]
-        denom_powers = pade_denom_order*x4[:, (self.fc_p_nc + self.fc_p_np + self.fc_p_dc):(self.fc_p_nc + self.fc_p_np + self.fc_p_dc + self.fc_p_dc)]
+        num_coeffs = x5[:, 0:(self.fc_p_nc)]
+        num_powers = pade_num_order*x5[:, self.fc_p_nc:(self.fc_p_nc + self.fc_p_np)]
+        denom_coeffs = x5[:, (self.fc_p_nc + self.fc_p_np):(self.fc_p_nc + self.fc_p_np + self.fc_p_dc)]
+        denom_powers = pade_denom_order*x5[:, (self.fc_p_nc + self.fc_p_np + self.fc_p_dc):(self.fc_p_nc + self.fc_p_np + self.fc_p_dc + self.fc_p_dc)]
         
-        time = time*self.xscale
         time_num = time.reshape(num_timesteps, 1)
         time_denom = time.reshape(num_timesteps, 1)
         time_num = time_num.repeat(1, pade_num_order)
@@ -61,9 +65,36 @@ class Pade_Neural_Operator(nn.Module):
         
         pade = torch.sum((num_coeffs*((time_num + epsilon)**num_powers)), dim = 1)/(torch.sum(((denom_coeffs*((time_denom + epsilon)**denom_powers))), dim =1)) 
         
-        output = pade*self.yscale + self.bias
+        short = torch.sum(f.tanh(self.fc6(x)))
+        
+        output = pade + short
         
         return output
+    
+class Pade_Neural_Operator(nn.Module):
+    
+    def __init__(self, parameter_dim, num_timesteps, pade_num_order, pade_denom_order, batch_size, epsilon):
+        
+        super(Pade_Neural_Operator, self).__init__()
+        
+        #pade layers
+        
+        self.pade1 = Pade_Layer(parameter_dim, num_timesteps, pade_num_order, pade_denom_order, batch_size, epsilon)
+        self.pade2 = Pade_Layer(parameter_dim, num_timesteps, pade_num_order, pade_denom_order, batch_size, epsilon)
+        
+        self.weights_layer = nn.Linear(in_features= parameter_dim, out_features= 1)
+        
+    def forward(self, x, time):
+        
+        x = x.view( batch_size, parameter_dim)
+        
+        #pade layers
+        output1 = self.pade1(x, time)
+        output2 = self.pade2(x, time)
+        
+        weights = self.weights_layer(x)
+        
+        return weights[:, 0]*output1 + output2 
 
 def train_model(pade_neural_operator, criterion, optimizer, sample_data, LS_data, run, learn_rate, LS_var_train_index, num_epochs=1, batchsize=20):
     
@@ -89,7 +120,7 @@ def train_model(pade_neural_operator, criterion, optimizer, sample_data, LS_data
     
     dataloader = DataLoader(dataset, batch_size=batchsize, shuffle=True)
     
-    scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=1 / 1.005)
+    scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=1 / 1.2)
     num_batches = len(dataloader)
 
     for epoch in range(num_epochs):
@@ -106,6 +137,7 @@ def train_model(pade_neural_operator, criterion, optimizer, sample_data, LS_data
             prediction = pade_neural_operator(sample, time)
             
             
+            
             if batch_num % 20 == 0 and epoch % 200 == 0: 
                 pred = prediction.detach().cpu().numpy()
                 LS_true = LS_var.detach().cpu().numpy()
@@ -113,7 +145,11 @@ def train_model(pade_neural_operator, criterion, optimizer, sample_data, LS_data
                 plt.plot(range(num_timesteps), LS_true, color = 'k')
                 plt.show()
             
-            loss = criterion(prediction, LS_var)
+            l2_reg = sum(p.pow(2.0).sum() for p in pade_neural_operator.parameters())
+            
+            
+            var = torch.var(LS_var)
+            loss = criterion(prediction, LS_var)/var + 0.00001 *l2_reg
             # Backward pass
             optimizer.zero_grad()
             loss.backward()
@@ -138,9 +174,9 @@ def train_model(pade_neural_operator, criterion, optimizer, sample_data, LS_data
     
         
         # Save model periodically
-        if (epoch + 1) % 20000 == 0:
+        if (epoch + 1) % 10000 == 0:
             print("Saving model...\n")
-            torch.save(pade_neural_operator.state_dict(), "PNO_state_LSvar_"+str(LS_var_train_index)+"_run_"+str(run)+"_"+str(epoch)+".pth")
+            torch.save(pade_neural_operator.state_dict(), "PNO_state_LSvar_"+str(LS_var_train_index)+"_run_"+str(run)+"_"+str(epoch+1)+".pth")
 
 
     
@@ -150,20 +186,20 @@ if __name__ == "__main__":
     LS_data_file = "LS_dataset_train_data.npy"              #dataset variable for the latent space (outputs)
     sample_data_file = "sample_data.npy"                    #dataset variable for the sample data (inputs)
     batch_size = 50                                         #batch size
-    epsilon = 1e-4                                          #small coefficient for pade neural operator
+    epsilon = 1e-7                                          #small coefficient for pade neural operator
     
     load_model = False
-    restart_training = True
+    restart_training = False
     use_CUDA = True
-    run_to_load = 3
-    epoch_to_load = 19999
-    learn_rate = 1e-7
+    run_to_load = 8
+    epoch_to_load = 10000
+    learn_rate = 1e-5
     batch_size = 1
-    run = 4
-    num_epochs = 100000
+    run = 9
+    num_epochs = 20000
     
     #pade neural operator controls
-    pade_num_order = 5
+    pade_num_order = 9
     pade_denom_order = 6
     LS_var_train_index = 2                                                              #index of latent space variable to train
 
