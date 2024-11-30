@@ -87,33 +87,48 @@ plt.grid()
 
 #%% DISCHARGING BATTERY
 
-Q=[]
-li_conc=[]
-time = []
-for i in range(len(files)):
-    Q.append(Nernst_eq(files[i].iloc[10500:19000,7].astype(float), E0, n, F, R,Temp))
-    lic6_conc = Q[i].iloc[0]
-    c6_conc = 1
-    li_conc.append(Q[i]*c6_conc/lic6_conc)
-    time.append(files[i].iloc[10500:19000,3].astype(float))
+#loading autoencoder data
+fs_test = np.load(r'C:\Users\wygli\OneDrive\Desktop\docs\Stanford Grad\cs230\Fs_test.npy')
+sample_data_test = np.load(r'C:\Users\wygli\OneDrive\Desktop\docs\Stanford Grad\cs230\sample_data_test.npy')
+scaling_factors_test = np.load(r'C:\Users\wygli\OneDrive\Desktop\docs\Stanford Grad\cs230\scaling_factors_test.npy')
 
-combined = list(zip(time, li_conc))
-combined0 = np.array(combined[0])
+scaled_1=fs_test[0]/scaling_factors_test[0]
+tt, xx, yy = scaled_1.shape
+x = np.linspace(0, 1, xx)
+y = np.linspace(0, 1, yy)
+t = np.linspace(0, 1, tt)
+X, Y, T = np.meshgrid(x, y, t, indexing='ij')
+#data_xyt = np.column_stack((X.flatten(), Y.flatten(), T.flatten(), scaled_1.flatten()))
 
-time = np.array(time)
-li_conc = np.array(li_conc)
 
-time0 = time[0]
-# time0 = time0[::10]
-time0 = time0[:100]
-li_conc0 = li_conc[0]
-# li_conc0 = li_conc0[::10]
-li_conc0 = li_conc0[:100]
-tau0 = D * time0 / (R**2)
-tau_max = np.max(tau0)
+data_xyt = np.column_stack((X.flatten(), Y.flatten(), T.flatten()))
+
+
+
+# Q=[]
+# li_conc=[]
+# time = []
+# for i in range(len(files)):
+#     Q.append(Nernst_eq(files[i].iloc[10500:19000,7].astype(float), E0, n, F, R,Temp))
+#     lic6_conc = Q[i].iloc[0]
+#     c6_conc = 1
+#     li_conc.append(Q[i]*c6_conc/lic6_conc)
+#     time.append(files[i].iloc[10500:19000,3].astype(float))
+
+# combined = list(zip(time, li_conc))
+# combined0 = np.array(combined[0])
+
+# time = np.array(time)
+# li_conc = np.array(li_conc)
+
+# time0 = time[0]
+# time0 = time0[:100]
+# li_conc0 = li_conc[0]
+# li_conc0 = li_conc0[:100]
+# tau0 = D * time0 / (R**2)
+# tau_max = np.max(tau0)
 
 def pde(xyt, c):
-
     dc_x = dde.grad.jacobian(c, xyt, j=0)
     dc_t = dde.grad.jacobian(c, xyt, j=2)
     dc_xx = dde.grad.hessian(c, xyt, j=0)
@@ -121,7 +136,7 @@ def pde(xyt, c):
     # Backend pytorch
     return (
         dc_t
-        - 2 * dc_x / (xyt[:, 0] + 1e-6)
+        - (2 * dc_x / (xyt[:, 0:1] + 1e-6)) #not xyt[:, 0]
         + 0.025*(dc_xx+dc_yy)
     )
 
@@ -143,8 +158,6 @@ def boundary_y0(x, on_boundary):
 def boundary_y1(x, on_boundary):
     return on_boundary and dde.utils.isclose(x[1], 1)
 
-#def ic_x(x):
-#    return 0
 
 def boundary_y(x, on_boundary):
     return on_boundary and (dde.utils.isclose(x[1], 0) or dde.utils.isclose(x[1], 1))
@@ -171,29 +184,48 @@ ic = dde.icbc.IC(geomtime, lambda t: 0, lambda _, on_initial: on_initial)
 bc_y = dde.icbc.PeriodicBC(geomtime, 0, boundary_y)
 
 
+def solution_func(x):
+
+    return scaled_1.flatten()[1:10000]
+
 data = dde.data.TimePDE(
     geomtime,
     pde,
     [bc_x0, bc_x1, ic, bc_y],
-    num_domain=50,
-    num_boundary=50,
+    num_domain=100,
+    num_boundary=100,
     num_initial=50,
-    #anchors=observe_xt,
-    num_test=10000,
+    anchors=data_xyt[1:10000],
+    solution = solution_func,
+    num_test=100,
 )
 
-layer_size = [3] + [32] * 3 + [1]
+#layer_size = [3] + [32] * 3 + [1]
+layer_size = [3] + [64] * 4 + [1]
+
 activation = "tanh"
 initializer = "Glorot uniform"
+#activation = "relu"               # ReLU for hidden layers
+#initializer =  "He uniform"
 net = dde.nn.FNN(layer_size, activation, initializer)
-
 model = dde.Model(data, net)
 
-model.compile("adam", lr=0.001)
-losshistory, train_state = model.train(iterations=20000) #train model
+# Stage 1
+model.compile("adam", lr=1)
+losshistory_adam, train_state_adam = model.train(iterations=2000)
 
-dde.saveplot(losshistory, train_state, issave=True, isplot=True)
+# Stage 2: Train with Adam optimizer for 8000 iterations
+model.compile("adam", lr=.001)
+losshistory_adam, train_state_adam = model.train(iterations=4000)
 
+# Stage 3: Train with L-BFGS optimizer for an additional 20000 iterations
+# Recompiling the model preserves weightsights and states
+model.compile("L-BFGS")
+losshistory_lbfgs, train_state_lbfgs = model.train(iterations=20000)
+
+# Save and plot the results
+dde.saveplot(losshistory_adam, train_state_adam, issave=False, isplot=True)
+dde.saveplot(losshistory_lbfgs, train_state_lbfgs, issave=False, isplot=True)
 
 #%%
 x = np.linspace(0, 1, 100)
@@ -210,15 +242,25 @@ T_flat = T.flatten()[:, None]
 points = np.hstack((X_flat, Y_flat, T_flat))
 c_pred = model.predict(points)
 C_pred = c_pred.reshape(X.shape)
-C_pred_2 = C_pred[:,:,30]
+C_pred_2 = C_pred[:,:,99]
 
-fig = plt.figure(figsize=(10, 8))
+fig = plt.figure(figsize=(10, 8))   
 ax = fig.add_subplot(111, projection='3d')
 surf = ax.plot_surface(X_2, Y_2, C_pred_2)
 ax.set_xlabel('Position X')
 ax.set_ylabel('Position Y')
 ax.set_zlabel('Concentration')
 ax.set_title('Lithium Ion Battery Concentration')
+plt.show()
+
+
+# Create the plot
+plt.figure(figsize=(10, 8))
+plt.imshow(C_pred_2, cmap='viridis')
+plt.colorbar(label='Value')
+plt.xlabel('X position')
+plt.ylabel('Y position')
+
 plt.show()
 
 #%%
