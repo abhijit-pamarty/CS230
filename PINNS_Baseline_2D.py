@@ -162,11 +162,18 @@ def boundary_y1(x, on_boundary):
 def boundary_y(x, on_boundary):
     return on_boundary and (dde.utils.isclose(x[1], 0) or dde.utils.isclose(x[1], 1))
 
+def initial_condition(x):
+    return np.isclose(x[:, 0], 0).astype(np.float32)
+
+def solution_func(x):
+
+    return scaled_1.flatten()[5000:8000]
+
 # Concentration from dataset
 #n_obs = time0.shape
 #observe_xt = np.vstack((np.ones(n_obs), np.array(time0))).T
 #observe_c = li_conc0.reshape(-1,1)
-#observe_pts = dde.icbc.PointSetBC(observe_xt, observe_c, component=0)
+observe_pts = dde.icbc.PointSetBC(data_xyt[5000:8000], scaled_1.flatten()[5000:8000], component=0)
 geom = dde.geometry.Rectangle([0, 0], [1, 1])
 
 
@@ -178,25 +185,22 @@ geomtime = dde.geometry.GeometryXTime(geom, timedomain)
 bc_x0 = dde.icbc.DirichletBC(geomtime, lambda x: 1, boundary_x0)
 bc_x1 = dde.icbc.DirichletBC(geomtime, lambda x: 0, boundary_x1)
 
-ic = dde.icbc.IC(geomtime, lambda t: 0, lambda _, on_initial: on_initial)
+ic = dde.icbc.IC(geomtime, initial_condition, lambda _, on_initial: on_initial)
 
 
 bc_y = dde.icbc.PeriodicBC(geomtime, 0, boundary_y)
 
 
-def solution_func(x):
-
-    return scaled_1.flatten()[1:10000]
 
 data = dde.data.TimePDE(
     geomtime,
     pde,
-    [bc_x0, bc_x1, ic, bc_y],
+    [bc_x0, bc_x1, ic, bc_y,observe_pts],
     num_domain=100,
     num_boundary=100,
     num_initial=50,
-    anchors=data_xyt[1:10000],
-    solution = solution_func,
+    anchors=data_xyt[5000:8000],
+    #solution = solution_func,
     num_test=100,
 )
 
@@ -205,27 +209,24 @@ layer_size = [3] + [64] * 4 + [1]
 
 activation = "tanh"
 initializer = "Glorot uniform"
-#activation = "relu"               # ReLU for hidden layers
-#initializer =  "He uniform"
+
 net = dde.nn.FNN(layer_size, activation, initializer)
 model = dde.Model(data, net)
 
-# Stage 1
-model.compile("adam", lr=1)
-losshistory_adam, train_state_adam = model.train(iterations=2000)
 
 # Stage 2: Train with Adam optimizer for 8000 iterations
-model.compile("adam", lr=.001)
+model.compile("adam", lr=.01)
 losshistory_adam, train_state_adam = model.train(iterations=4000)
 
 # Stage 3: Train with L-BFGS optimizer for an additional 20000 iterations
 # Recompiling the model preserves weightsights and states
-model.compile("L-BFGS")
-losshistory_lbfgs, train_state_lbfgs = model.train(iterations=20000)
+#model.compile("L-BFGS")
+#losshistory_lbfgs, train_state_lbfgs = model.train(iterations=20000)
+
 
 # Save and plot the results
 dde.saveplot(losshistory_adam, train_state_adam, issave=False, isplot=True)
-dde.saveplot(losshistory_lbfgs, train_state_lbfgs, issave=False, isplot=True)
+#dde.saveplot(losshistory_lbfgs, train_state_lbfgs, issave=False, isplot=True)
 
 #%%
 x = np.linspace(0, 1, 100)
@@ -242,7 +243,7 @@ T_flat = T.flatten()[:, None]
 points = np.hstack((X_flat, Y_flat, T_flat))
 c_pred = model.predict(points)
 C_pred = c_pred.reshape(X.shape)
-C_pred_2 = C_pred[:,:,99]
+C_pred_2 = C_pred[:,:,1]/np.max(C_pred[:,:,:])
 
 fig = plt.figure(figsize=(10, 8))   
 ax = fig.add_subplot(111, projection='3d')
@@ -254,7 +255,6 @@ ax.set_title('Lithium Ion Battery Concentration')
 plt.show()
 
 
-# Create the plot
 plt.figure(figsize=(10, 8))
 plt.imshow(C_pred_2, cmap='viridis')
 plt.colorbar(label='Value')
@@ -264,13 +264,11 @@ plt.ylabel('Y position')
 plt.show()
 
 #%%
-# Extract the data for t = 0.8
 fixed_t = 0.8
 idx = np.abs(t - fixed_t).argmin()  # Find the closest index for t = 0.8
 x_fixed = X[idx, :]
 c_fixed = C_pred[idx, :]
 
-# Plot the 2D graph
 plt.figure(figsize=(10, 6))
 plt.plot(x_fixed, c_fixed, label=f'Time T = {fixed_t}')
 plt.xlabel('Position X')
