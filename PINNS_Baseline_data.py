@@ -131,22 +131,22 @@ def pde(xt, c):
     )
 
 def boundary_l(xt, on_boundary):
-    return on_boundary and dde.utils.isclose(xt[0], 0, atol=0.01)
+    return on_boundary and np.isclose(xt[0], 0, atol=0.01)
 
 def boundary_r(xt, on_boundary):
-    return on_boundary and dde.utils.isclose(xt[0], 1, atol=0.01)
+    return on_boundary and np.isclose(xt[0], 1, atol=0.01)
 
 def initial_condition(xt):
     return np.isclose(xt[:, 0], 0,atol=0.01).astype(np.float32)
 
 def solution_func(x):
-    return conc_xt[0:1000]
+    return conc_xt[0:2000]
 
 # Concentration from dataset
 #n_obs = time0.shape
 #observe_xt = np.vstack((np.ones(n_obs), np.array(time0))).T
 #observe_c = li_conc0.reshape(-1,1)
-observe_pts = dde.icbc.PointSetBC(data_xt[0:1000], conc_xt[0:1000], component=0)
+observe_pts = dde.icbc.PointSetBC(data_xt[0:2000], conc_xt[0:2000], component=0)
 geom = dde.geometry.Interval(0, 1)
 timedomain = dde.geometry.TimeDomain(0, 1)
 geomtime = dde.geometry.GeometryXTime(geom, timedomain)
@@ -164,9 +164,9 @@ data = dde.data.TimePDE(
     num_domain=40,
     num_boundary=20,
     num_initial=10,
-    anchors=data_xt[0:1000],
+    anchors=data_xt[0:2000],
     solution=solution_func,
-    num_test=100,
+    num_test=1000,
 )
 
 layer_size = [2] + [64] * 3 + [1]
@@ -176,16 +176,16 @@ net = dde.nn.FNN(layer_size, activation, initializer)
 
 model = dde.Model(data, net)
 
-model.compile("adam", lr=0.001)
-losshistory_adam, train_state_adam = model.train(iterations=3000)
+model.compile("adam", lr=0.01)
+losshistory_adam, train_state_adam = model.train(iterations=18000)
 
-model.compile("L-BFGS")
-losshistory_lbfgs, train_state_lbfgs = model.train(iterations=10000)
+#model.compile("L-BFGS")
+#losshistory_lbfgs, train_state_lbfgs = model.train(iterations=10000)
 
 
 # Save and plot the results
-dde.saveplot(losshistory_adam, train_state_adam, issave=True, isplot=True)
-dde.saveplot(losshistory_lbfgs, train_state_lbfgs, issave=True, isplot=True)
+dde.saveplot(losshistory_adam, train_state_adam, issave=False, isplot=True)
+#dde.saveplot(losshistory_lbfgs, train_state_lbfgs, issave=False, isplot=True)
 
 #%%
 
@@ -217,7 +217,7 @@ ax.set_title('Lithium Ion Battery Concentration')
 plt.show()
 
 #%%
-C_pred_2d_fixT = C_pred_2d[:,:,90]
+C_pred_2d_fixT = C_pred_2d[:,:,1]/np.max(C_pred_2d)
 plt.figure(figsize=(10, 8))
 plt.imshow(C_pred_2d_fixT, cmap='viridis')
 plt.colorbar(label='Value')
@@ -225,3 +225,19 @@ plt.xlabel('X position')
 plt.ylabel('Y position')
 
 plt.show()
+
+#%%
+fixed_t = 0.8
+idx = np.abs(t - fixed_t).argmin()  # Find the closest index for t = 0.8
+x_fixed = X[idx, :]
+c_fixed = C_pred[idx, :]
+
+plt.figure(figsize=(10, 6))
+plt.plot(x_fixed, c_fixed, label=f'Time T = {fixed_t}')
+plt.xlabel('Position X')
+plt.ylabel('Concentration')
+plt.title('Lithium Ion Battery Concentration at T = 0.8')
+plt.legend()
+plt.grid(True)
+plt.show()
+
