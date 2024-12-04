@@ -138,17 +138,9 @@ class CustomLoss(nn.Module):
         super(CustomLoss, self).__init__()
 
     def forward(self, predictions, targets):
+        
         loss = ((torch.mean((predictions - targets)**2))**0.5)/torch.mean(targets)
         return loss
-
-# Generate synthetic data: Mapping from input matrix A
-def generate_data(num_samples=100, input_size=5):
-    # Random input-output matrices
-    A = np.zeros((num_samples, input_size, input_size))
-    A[:, 20:40, 20:40] = 1
-    
-    return torch.tensor(A, dtype=torch.float32)
-
 
 def train_model(encoder, decoder, criterion, optimizer, X, run, learn_rate, num_epochs=1, batchsize=50):
     # Reshape data into (num_samples * num_timesteps, X_size, Y_size)
@@ -225,7 +217,36 @@ def train_model(encoder, decoder, criterion, optimizer, X, run, learn_rate, num_
             torch.save(encoder.state_dict(), f"encoder_state_run_{run}_{epoch}.pth")
             torch.save(decoder.state_dict(), f"decoder_state_run_{run}_{epoch}.pth")
 
-
+def generate_latent_space(encoder, X, latent_space_dim):
+    
+    #X organized as sample_index, time, X, Y
+    
+    
+    num_samples, num_timesteps, _, _ = X.shape
+    
+    LS_dataset = np.zeros((num_samples, num_timesteps, latent_space_dim))
+    print("Generating latent space data...")
+    for sample_idx in range(num_samples):
+        for timestep_idx in range(num_timesteps):
+            print(f"Processing sample {sample_idx} at timestep {timestep_idx}...")
+            test_sample = np.zeros((1, 1, 50, 50)).astype(np.float32)
+            test_sample[0, 0, :, :] = X[sample_idx, timestep_idx, :, :]
+            
+            test_sample = torch.from_numpy(test_sample).float()
+            
+            if torch.cuda.is_available():
+                print("CUDA available")
+                device = torch.device("cuda:0")  # Specify the GPU device
+                test_sample = test_sample.to(device)
+                
+            dataset = TensorDataset(test_sample)
+            batchsize = 1  # Ensure batch size fits dataset
+            dataloader = DataLoader(dataset, batch_size=batchsize, shuffle=True, drop_last=True)
+            LS = encoder(test_sample).cpu().detach().numpy()
+            LS_dataset[sample_idx, timestep_idx, :] = LS
+    
+    return LS_dataset
+    
 # Main function
 if __name__ == "__main__":
     # Hyperparameters
@@ -236,7 +257,7 @@ if __name__ == "__main__":
     run = 2
     total_epochs = 5000
 
-    data_file = 'Fs.npy'
+    data_file = 'Fs.npy' 
     load_model = True
     restart_training = True
     use_CUDA = True
@@ -262,7 +283,7 @@ if __name__ == "__main__":
     # Generate data
     X = np.load(data_file).astype(np.float32)
     X = X/np.max(X)
-    X_train = X[0:16, :, :, :]
+    X_train = X[:, :, :, :]
     X_test = X[17:19, :, :, :]
 
     # Train the model
@@ -281,6 +302,10 @@ if __name__ == "__main__":
 
     # Test with a new sample
 
+    LS_dataset = generate_latent_space(encoder, X, latent_space_dim)
+    np.save('LS_dataset_train_data.npy', LS_dataset)
+    
+    """
     test_sample = np.zeros((1, 1, 50, 50)).astype(np.float32)
     test_sample[0, 0, :, :] = X[19, 50, :, :]
 
@@ -304,4 +329,6 @@ if __name__ == "__main__":
     plt.imshow(prediction.detach().cpu().numpy()[0, 0, :, :])
     plt.title("predicted data")
     plt.show()
+    """
+    
     

@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import scipy.stats.qmc as qmc
 
 
-def diffusion( num_samples = 20, min_kappa = 5e-4, max_kappa = 0.025, M = 50, min_U1 = 1e-5, max_U1 = 4):
+def diffusion( num_samples = 3, min_kappa = 5e-4, max_kappa = 0.025, M = 50, min_U1 = 1e-5, max_U1 = 4):
     
     print("starting...\n")
     h = 1/M
@@ -84,7 +84,7 @@ def diffusion( num_samples = 20, min_kappa = 5e-4, max_kappa = 0.025, M = 50, mi
     delt = delt_x + delt_y 
     
     sampler = qmc.LatinHypercube(d = 2)
-    sample = sampler.random(n = 20)
+    sample = sampler.random(n = 3)
     
     sample[:, 0] = (max_kappa - min_kappa)* sample[:, 0]  + min_kappa
     sample[:, 1] = (max_U1 - min_U1)* sample[:, 1]  + min_U1
@@ -105,8 +105,7 @@ def diffusion( num_samples = 20, min_kappa = 5e-4, max_kappa = 0.025, M = 50, mi
         #dirichlet boundary conditions
         scaling_factor = sample[sample_idx, 0]/((h**2)) + sample[sample_idx, 1]/(2*h)
         scaling_factors.append(scaling_factor)
-        
-        i = int(np.ceil(M/3));
+    
         
         LHS = sample[sample_idx, 0]*del2 + sample[sample_idx, 1]*del1 + delt              #LHS array
         
@@ -136,8 +135,8 @@ def diffusion( num_samples = 20, min_kappa = 5e-4, max_kappa = 0.025, M = 50, mi
         sample_idx += 1
         
     
-    np.save('Fs.npy', Fs)
-    np.save('sample_data.npy', sample)
-    np.save('scaling_factors.npy', scaling_factors)
+    np.save('Fs_test.npy', Fs)
+    np.save('sample_data_test.npy', sample)
+    np.save('scaling_factors_test.npy', scaling_factors)
     
 diffusion()

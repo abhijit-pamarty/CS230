@@ -8,6 +8,7 @@ import random as r
 import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader, TensorDataset
 
+
 #define the pade layer
 class Pade_Layer(nn.Module):
     
@@ -121,7 +122,6 @@ def train_model(pade_neural_operator, criterion, optimizer, sample_data, LS_data
     dataloader = DataLoader(dataset, batch_size=batchsize, shuffle=True)
     
     scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=1 / 1.2)
-    num_batches = len(dataloader)
 
     for epoch in range(num_epochs):
         epoch_loss = 0.0
@@ -145,11 +145,10 @@ def train_model(pade_neural_operator, criterion, optimizer, sample_data, LS_data
                 plt.plot(range(num_timesteps), LS_true, color = 'k')
                 plt.show()
             
-            l2_reg = sum(p.pow(2.0).sum() for p in pade_neural_operator.parameters())
+            #l2_reg = sum(p.pow(2.0).sum() for p in pade_neural_operator.parameters())
             
             
-            var = torch.var(LS_var)
-            loss = criterion(prediction, LS_var)/var + 0.00001 *l2_reg
+            loss = wasserstein_1d(prediction, LS_var) 
             # Backward pass
             optimizer.zero_grad()
             loss.backward()
@@ -164,7 +163,7 @@ def train_model(pade_neural_operator, criterion, optimizer, sample_data, LS_data
             batch_num += 1
         
         # Scheduler step every 1000 epochs
-        if epoch % 100 == 0 and epoch > 0:
+        if epoch % 10000 == 0 and epoch > 0:
             scheduler.step()
         
         # Print epoch loss
@@ -178,6 +177,10 @@ def train_model(pade_neural_operator, criterion, optimizer, sample_data, LS_data
             print("Saving model...\n")
             torch.save(pade_neural_operator.state_dict(), "PNO_state_LSvar_"+str(LS_var_train_index)+"_run_"+str(run)+"_"+str(epoch+1)+".pth")
 
+def wasserstein_1d(x, y):
+    x_sorted, _ = torch.sort(x)
+    y_sorted, _ = torch.sort(y)
+    return torch.mean(torch.abs(x_sorted - y_sorted))
 
     
 #Latent space trajectory finder
@@ -189,19 +192,20 @@ if __name__ == "__main__":
     epsilon = 1e-7                                          #small coefficient for pade neural operator
     
     load_model = False
-    restart_training = False
+    restart_training = True
     use_CUDA = True
-    run_to_load = 8
+    run_to_load = 11
     epoch_to_load = 10000
-    learn_rate = 1e-5
+    LS_var_to_load = 3
+    learn_rate = 5e-7
     batch_size = 1
-    run = 9
-    num_epochs = 20000
+    run = 12
+    num_epochs = 200000
     
     #pade neural operator controls
     pade_num_order = 9
-    pade_denom_order = 6
-    LS_var_train_index = 2                                                              #index of latent space variable to train
+    pade_denom_order = 8
+    LS_var_train_index = 3                                                             #index of latent space variable to train
 
 
     print("Loading latent space dataset and sample dataset...")
@@ -223,7 +227,7 @@ if __name__ == "__main__":
         print("CUDA available")
         pade_neural_operator = pade_neural_operator.to(device)
     
-    criterion = nn.MSELoss()
+    criterion = nn.KLDivLoss()
     optimizer = optim.Adam(list(pade_neural_operator.parameters())  , lr=learn_rate)
 
     LS_data_one_var = LS_data[:, :, LS_var_train_index]
@@ -231,11 +235,11 @@ if __name__ == "__main__":
     # Train the model
     if (load_model):
         print("Loading model...\n")
-        pade_neural_operator.load_state_dict(torch.load("PNO_state_LSvar_"+str(LS_var_train_index)+"_run_"+str(run_to_load)+"_"+str(epoch_to_load)+".pth"))
+        pade_neural_operator.load_state_dict(torch.load("PNO_state_LSvar_"+str(LS_var_to_load)+"_run_"+str(run_to_load)+"_"+str(epoch_to_load)+".pth"))
 
     elif (restart_training):
         print("Starting training with restart...\n")
-        pade_neural_operator.load_state_dict(torch.load("PNO_state_LSvar_"+str(LS_var_train_index)+"_run_"+str(run_to_load)+"_"+str(epoch_to_load)+".pth"))
+        pade_neural_operator.load_state_dict(torch.load("PNO_state_LSvar_"+str(LS_var_to_load)+"_run_"+str(run_to_load)+"_"+str(epoch_to_load)+".pth"))
         train_model(pade_neural_operator, criterion, optimizer, sample_data, LS_data_one_var, run, learn_rate, LS_var_train_index, num_epochs, batch_size)
     else:
         print("Starting training...\n")
