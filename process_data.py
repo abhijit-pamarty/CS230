@@ -173,6 +173,7 @@ def generate_latent_space(encoder, X, latent_space_dim):
 
 ####################################### PADE MODEL ARCHITECTURE #######################################  
 #define the pade layer
+#define the pade layer
 class Pade_Layer(nn.Module):
     
     def __init__(self, parameter_dim, num_timesteps, pade_num_order, pade_denom_order, batch_size, epsilon):
@@ -197,13 +198,15 @@ class Pade_Layer(nn.Module):
         self.fc3 = nn.Linear(in_features=self.fc_2, out_features=self.fc_3)
         self.fc4 = nn.Linear(in_features=self.fc_3, out_features=self.fc_4)
         self.fc5 = nn.Linear(in_features=self.fc_4, out_features=(self.fc_p_nc + self.fc_p_np + self.fc_p_dc + self.fc_p_dp))
-    
+        
+
+        
+        
         self.fc6 = nn.Linear(in_features = parameter_dim, out_features = (self.fc_p_nc + self.fc_p_np + self.fc_p_dc + self.fc_p_dp))
         
         
     def forward(self, x, time):
         
-        x = x.view( batch_size, parameter_dim)
         
         #FC layers
         x1 = f.leaky_relu(self.fc1(x))
@@ -214,10 +217,10 @@ class Pade_Layer(nn.Module):
     
         
         #PNO layer
-        num_coeffs = x5[:, 0:(self.fc_p_nc)]
-        num_powers = pade_num_order*x5[:, self.fc_p_nc:(self.fc_p_nc + self.fc_p_np)]
-        denom_coeffs = x5[:, (self.fc_p_nc + self.fc_p_np):(self.fc_p_nc + self.fc_p_np + self.fc_p_dc)]
-        denom_powers = pade_denom_order*x5[:, (self.fc_p_nc + self.fc_p_np + self.fc_p_dc):(self.fc_p_nc + self.fc_p_np + self.fc_p_dc + self.fc_p_dc)]
+        num_coeffs = 2*(x5[ 0:(self.fc_p_nc)] - 0.5)
+        num_powers = pade_num_order*x5[ self.fc_p_nc:(self.fc_p_nc + self.fc_p_np)]
+        denom_coeffs = 2*(x5[(self.fc_p_nc + self.fc_p_np):(self.fc_p_nc + self.fc_p_np + self.fc_p_dc)] - 0.5)
+        denom_powers = pade_denom_order*x5[(self.fc_p_nc + self.fc_p_np + self.fc_p_dc):(self.fc_p_nc + self.fc_p_np + self.fc_p_dc + self.fc_p_dc)]
         
         time_num = time.reshape(num_timesteps, 1)
         time_denom = time.reshape(num_timesteps, 1)
@@ -247,7 +250,6 @@ class Pade_Neural_Operator(nn.Module):
         
     def forward(self, x, time):
         
-        x = x.view( batch_size, parameter_dim)
         
         #pade layers
         output1 = self.pade1(x, time)
@@ -255,7 +257,8 @@ class Pade_Neural_Operator(nn.Module):
         
         weights = self.weights_layer(x)
         
-        return weights[:, 0]*output1 + output2 
+        return weights[0]*output1 + output2 
+
 
 
 
@@ -278,8 +281,8 @@ if __name__ == "__main__":
     num_epochs = 200000
     
     #pade neural operator controls
-    pade_num_order = 9
-    pade_denom_order = 8          
+    pade_num_order = 7
+    pade_denom_order = 5          
 
     print("Loading latent space dataset and sample dataset...")
     LS_data = np.load(LS_data_file).astype(np.float32)
@@ -304,10 +307,10 @@ if __name__ == "__main__":
         
     #Load the state of the pade operators
     print("loading state of pade neural operators")
-    pade_neural_operator_LS_0.load_state_dict(torch.load("PNO_state_LSvar_0_final.pth"))
-    pade_neural_operator_LS_1.load_state_dict(torch.load("PNO_state_LSvar_1_final.pth"))
-    pade_neural_operator_LS_2.load_state_dict(torch.load("PNO_state_LSvar_2_final.pth"))
-    pade_neural_operator_LS_3.load_state_dict(torch.load("PNO_state_LSvar_3_final.pth"))
+    pade_neural_operator_LS_0.load_state_dict(torch.load("PNO_state_LSvar_0_final_2.pth"))
+    pade_neural_operator_LS_1.load_state_dict(torch.load("PNO_state_LSvar_1_final_4.pth"))
+    pade_neural_operator_LS_2.load_state_dict(torch.load("PNO_state_LSvar_2_final_2.pth"))
+    pade_neural_operator_LS_3.load_state_dict(torch.load("PNO_state_LSvar_3_final_2.pth"))
     
     ########################################### set up the autoencoder ###########################################
     
@@ -522,16 +525,17 @@ if __name__ == "__main__":
     im1 = axs[0].imshow(data1, cmap='viridis')
     fig.colorbar(im1, ax=axs[0])
     axs[0].set_title('True concentration',fontsize=12)
-
+    im1.set_clim(0, 1)
     
     im2 = axs[1].imshow(data2, cmap='viridis')
     fig.colorbar(im2, ax=axs[1])
     axs[1].set_title('Reconstructed concentration',fontsize=12)
-
+    im2.set_clim(0, 1)
     
-    im3 = axs[2].imshow(data3, cmap='inferno')
+    im3 = axs[2].imshow(np.log10(np.abs(data3*100)), cmap='inferno')
     fig.colorbar(im3, ax=axs[2])
-    axs[2].set_title('Reconstruction error',fontsize=12)
+    axs[2].set_title('Reconstruction error (log(e))',fontsize=12)
+    im3.set_clim(-3, 2)
 
 
     plt.show()
@@ -539,58 +543,112 @@ if __name__ == "__main__":
     #### Autoencoder vs true data error graphs ####
     
 
-    plt.scatter(range(20), autoencoder_train_errors_lin, marker='x', color = 'k', label = "train data" )
-    plt.scatter([20, 21, 22], autoencoder_test_errors_lin, marker='+', color = 'red', label = "test data")
+    plt.scatter(range(20), np.log10(np.abs(autoencoder_train_errors_lin)*100), marker='x', color = 'k', label = "train data" )
+    plt.scatter([20, 21, 22], np.log10(np.abs(autoencoder_test_errors_lin)*100), marker='+', color = 'red', label = "test data")
     legend = plt.legend()
     legend.get_frame().set_edgecolor('k')
+    plt.ylim(-3,2)
     plt.title('Reconstruction error',fontsize=16)
-
+    plt.xlabel("case index")
+    plt.ylabel("log(e)")
     plt.show()
     
     
-    #### Latent space variable graphs #### 
+    #### Latent space variable graphs - train set#### 
     
-    case_num = 0
+    case_num = 7
 
-    data1_1 = pade_approximant_test[case_num, :, 0]
-    data1_2 = LS_dataset_test[case_num, :, 0]
-    data2_1 = pade_approximant_test[case_num, :, 1]
-    data2_2 = LS_dataset_test[case_num, :, 1]
-    data3_1 = pade_approximant_test[case_num, :, 2]
-    data3_2 = LS_dataset_test[case_num, :, 2]
-    data4_1 = pade_approximant_test[case_num, :, 3]
-    data4_2 = LS_dataset_test[case_num, :, 3]
+    data1_1 = pade_approximant_train[case_num, :, 0] - np.min(pade_approximant_train[case_num, :, 0])
+    data1_2 = LS_dataset_train[case_num, :, 0] - np.min(pade_approximant_train[case_num, :, 0])
+    data2_1 = pade_approximant_train[case_num, :, 1] - np.min(pade_approximant_train[case_num, :, 1])
+    data2_2 = LS_dataset_train[case_num, :, 1] - np.min(pade_approximant_train[case_num, :, 1])
+    data3_1 = pade_approximant_train[case_num, :, 2] - np.min(pade_approximant_train[case_num, :, 2])
+    data3_2 = LS_dataset_train[case_num, :, 2] - np.min(pade_approximant_train[case_num, :, 2])
+    data4_1 = pade_approximant_train[case_num, :, 3] - np.min(pade_approximant_train[case_num, :, 3])
+    data4_2 = LS_dataset_train[case_num, :, 3] - np.min(pade_approximant_train[case_num, :, 3])
     
     # Create a figure with 3 subplots
     fig, axs = plt.subplots(2, 2, figsize=(15, 5))
     
-    axs[0, 0].plot(range(num_timesteps), data1_1, color = 'red')
-    axs[0, 0].plot(range(num_timesteps), data1_2, color = 'k')
+    axs[0, 0].plot(range(num_timesteps), data1_1, color = 'k')
+    axs[0, 0].plot(range(num_timesteps), data1_2, color = 'red')
     
-    axs[0, 1].plot(range(num_timesteps), data2_1, color = 'red')
-    axs[0, 1].plot(range(num_timesteps), data2_2, color = 'k')
+    axs[0, 1].plot(range(num_timesteps), data2_1, color = 'k')
+    axs[0, 1].plot(range(num_timesteps), data2_2, color = 'red')
     
-    axs[1, 0].plot(range(num_timesteps), data3_1, color = 'red')
-    axs[1, 0].plot(range(num_timesteps), data3_2, color = 'k')
+    axs[1, 0].plot(range(num_timesteps), data3_1, color = 'k')
+    axs[1, 0].plot(range(num_timesteps), data3_2, color = 'red')
     
-    axs[1, 1].plot(range(num_timesteps), data4_1, color = 'red')
-    axs[1, 1].plot(range(num_timesteps), data4_2, color = 'k')
-    fig.suptitle('Latent space variable predictions',fontsize=16)
+    axs[1, 1].plot(range(num_timesteps), data4_1, color = 'k')
+    axs[1, 1].plot(range(num_timesteps), data4_2, color = 'red')
+    fig.suptitle('Latent space variable predictions - train set',fontsize=16)
+    
+    axs[0, 0].axis(ymin = 0, ymax = 0.7)
+    axs[0, 1].axis(ymin = 0, ymax = 0.7)
+    axs[1, 0].axis(ymin = 0, ymax = 0.7)
+    axs[1, 1].axis(ymin = 0, ymax = 0.7)
+    
+    axs[0, 0].axis(xmin = 0, xmax = 99)
+    axs[0, 1].axis(xmin = 0, xmax = 99)
+    axs[1, 0].axis(xmin = 0, xmax = 99)
+    axs[1, 1].axis(xmin = 0, xmax = 99)
+    plt.show()
+    
+    #### Latent space variable graphs - test set#### 
+    
+    case_num = 0
 
+    data1_1 = pade_approximant_test[case_num, :, 0] - np.min(pade_approximant_test[case_num, :, 0])
+    data1_2 = LS_dataset_test[case_num, :, 0] - np.min(pade_approximant_test[case_num, :, 0])
+    data2_1 = pade_approximant_test[case_num, :, 1] - np.min(pade_approximant_test[case_num, :, 1])
+    data2_2 = LS_dataset_test[case_num, :, 1] - np.min(pade_approximant_test[case_num, :, 1])
+    data3_1 = pade_approximant_test[case_num, :, 2] - np.min(pade_approximant_test[case_num, :, 2])
+    data3_2 = LS_dataset_test[case_num, :, 2] - np.min(pade_approximant_test[case_num, :, 2])
+    data4_1 = pade_approximant_test[case_num, :, 3] - np.min(pade_approximant_test[case_num, :, 3])
+    data4_2 = LS_dataset_test[case_num, :, 3] - np.min(pade_approximant_test[case_num, :, 3])
+    
+    # Create a figure with 3 subplots
+    fig, axs = plt.subplots(2, 2, figsize=(15, 5))
+    
+    axs[0, 0].plot(range(num_timesteps), data1_1, color = 'k')
+    axs[0, 0].plot(range(num_timesteps), data1_2, color = 'red')
+    
+    axs[0, 1].plot(range(num_timesteps), data2_1, color = 'k')
+    axs[0, 1].plot(range(num_timesteps), data2_2, color = 'red')
+    
+    axs[1, 0].plot(range(num_timesteps), data3_1, color = 'k')
+    axs[1, 0].plot(range(num_timesteps), data3_2, color = 'red')
+    
+    axs[1, 1].plot(range(num_timesteps), data4_1, color = 'k')
+    axs[1, 1].plot(range(num_timesteps), data4_2, color = 'red')
+    fig.suptitle('Latent space variable predictions - test set',fontsize=16)
+
+    axs[0, 0].axis(ymin = 0, ymax = 0.7)
+    axs[0, 1].axis(ymin = 0, ymax = 0.7)
+    axs[1, 0].axis(ymin = 0, ymax = 0.7)
+    axs[1, 1].axis(ymin = 0, ymax = 0.7)
+    
+    axs[0, 0].axis(xmin = 0, xmax = 99)
+    axs[0, 1].axis(xmin = 0, xmax = 99)
+    axs[1, 0].axis(xmin = 0, xmax = 99)
+    axs[1, 1].axis(xmin = 0, xmax = 99)
     plt.show()
     
     #### Latent space variable errors #### 
     
-    plt.scatter(range(20), pade_train_errors_lin[:, 0], marker='x', color = 'k', label = "train data - LS0" )
-    plt.scatter([20, 21, 22], pade_test_errors_lin[:, 0], marker='+', color = 'red', label = "test data - LS0")
-    plt.scatter(range(20), pade_train_errors_lin[:, 1], marker='*', color = 'k', label = "train data - LS1" )
-    plt.scatter([20, 21, 22], pade_test_errors_lin[:, 1], marker='o', color = 'red', label = "test data - LS1")
-    plt.scatter(range(20), pade_train_errors_lin[:, 2], marker='s', color = 'k', label = "train data - LS2" )
-    plt.scatter([20, 21, 22], pade_test_errors_lin[:, 2], marker='v', color = 'red', label = "test data - LS2")
-    plt.scatter(range(20), pade_train_errors_lin[:, 3], marker='<', color = 'k', label = "train data - LS3" )
-    plt.scatter([20, 21, 22], pade_test_errors_lin[:, 3], marker='d', color = 'red', label = "test data - LS3")
-    legend = plt.legend()
-    legend.get_frame().set_edgecolor('k')
+    plt.scatter(range(20), np.log10(np.abs(pade_train_errors_lin[:, 0])*100), marker='x', color = 'k', label = "train data - LS0" )
+    plt.scatter([20, 21, 22], np.log10(np.abs(pade_test_errors_lin[:, 0])*100), marker='+', color = 'red', label = "test data - LS0")
+    plt.scatter(range(20), np.log10(np.abs(pade_train_errors_lin[:, 1])*100), marker='*', color = 'k', label = "train data - LS1" )
+    plt.scatter([20, 21, 22], np.log10(np.abs(pade_test_errors_lin[:, 1])*100), marker='o', color = 'red', label = "test data - LS1")
+    plt.scatter(range(20), np.log10(np.abs(pade_train_errors_lin[:, 2])*100), marker='s', color = 'k', label = "train data - LS2" )
+    plt.scatter([20, 21, 22], np.log10(np.abs(pade_test_errors_lin[:, 2])*100), marker='v', color = 'red', label = "test data - LS2")
+    plt.scatter(range(20), np.log10(np.abs(pade_train_errors_lin[:, 3])*100), marker='<', color = 'k', label = "train data - LS3" )
+    plt.scatter([20, 21, 22], np.log10(np.abs(pade_test_errors_lin[:, 3])*100), marker='d', color = 'red', label = "test data - LS3")
+    #legend = plt.legend()
+    plt.ylim(-3,2)
+    plt.xlabel("case index")
+    plt.ylabel("log(e)")
+    #legend.get_frame().set_edgecolor('k')
     plt.title('Latent space variable prediction error',fontsize=16)
     
     #### Full model vs true data ####
@@ -608,25 +666,31 @@ if __name__ == "__main__":
     im1 = axs[0].imshow(data1, cmap='viridis')
     fig.colorbar(im1, ax=axs[0])
     axs[0].set_title('True concentration',fontsize=12)
+    im1.set_clim(0, 1)
     
     im2 = axs[1].imshow(data2, cmap='viridis')
     fig.colorbar(im2, ax=axs[1])
     axs[1].set_title('Model predicted concentration',fontsize=12)
+    im2.set_clim(0, 1)
     
-    im3 = axs[2].imshow(data3, cmap='inferno')
+    im3 = axs[2].imshow(np.log10(np.abs(data3*100)), cmap='inferno')
     fig.colorbar(im3, ax=axs[2])
-    axs[2].set_title('Prediction error',fontsize=12)
+    axs[2].set_title('Prediction error (log(e))',fontsize=12)
+    im3.set_clim(-3, 2)
 
     plt.show()
     
     #### full model vs true data error graphs ####
     
 
-    plt.scatter(range(20), full_model_train_errors_lin, marker='D', color = 'k', label = "train data" )
-    plt.scatter([20, 21, 22], full_model_test_errors_lin, marker='p', color = 'red', label = "test data")
+    plt.scatter(range(20), np.log10(np.abs(full_model_train_errors_lin)*100), marker='D', color = 'k', label = "train data" )
+    plt.scatter([20, 21, 22], np.log10(np.abs(full_model_test_errors_lin)*100), marker='p', color = 'red', label = "test data")
     legend = plt.legend()
     legend.get_frame().set_edgecolor('k')
     plt.title('Prediction error',fontsize=16)
+    plt.ylim(-3,2)
+    plt.xlabel("case index")
+    plt.ylabel("log(e)")
 
     plt.show()
     
